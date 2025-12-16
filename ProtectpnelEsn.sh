@@ -1,19 +1,50 @@
 #!/bin/bash
-# =================================================
-# Shaasleep Protect Auto Installer
-# © 2025 Shaasleep
-# =================================================
+# =====================================================
+# Shaasleep Protect 🔐 — Full Isolation System
+# Safe Laravel Integration for Pterodactyl v1.11+
+# Powered by @Shaasleep | Auto-Update Engine (GitSync)
+# =====================================================
 
-set -e
+set -euo pipefail
 
-APP_PATH=$(pwd)
-HELPER_PATH="$APP_PATH/app/Helpers/ShaasleepProtect.php"
-MIDDLEWARE_PATH="$APP_PATH/app/Http/Middleware/ProtectAdmin.php"
-KERNEL_PATH="$APP_PATH/app/Http/Kernel.php"
+REPO_URL="https://raw.githubusercontent.com/ditxzstore09/ditxzzX/main/ProtectpnelEsn.sh)"
+PANEL_ROOT="/var/www/pterodactyl"
+HELPER_DIR="$PANEL_ROOT/app/Helpers"
+MIDDLEWARE_DIR="$PANEL_ROOT/app/Http/Middleware"
+HELPER_FILE="$HELPER_DIR/ShaasleepProtect.php"
+MIDDLEWARE_FILE="$MIDDLEWARE_DIR/ShaasleepMiddleware.php"
+KERNEL_FILE="$PANEL_ROOT/app/Http/Kernel.php"
+BACKUP_KERNEL="$KERNEL_FILE.shaasleep.bak"
+ACTION="${1:-install}"
 
-echo "[*] Membuat Protect..."
-mkdir -p "$APP_PATH/app/Helpers"
-cat > "$HELPER_PATH" << 'EOF'
+function update_self() {
+    echo "🌐 Checking for updates..."
+    TMP_SCRIPT="/tmp/shaasleep_update.sh"
+    curl -fsSL "$REPO_URL" -o "$TMP_SCRIPT" || {
+        echo "⚠️  Cannot fetch update from GitHub. Check connection."; exit 1;
+    }
+    chmod +x "$TMP_SCRIPT"
+    if ! cmp -s "$TMP_SCRIPT" "$0"; then
+        echo "⬆️  Update found! Applying new version..."
+        mv "$TMP_SCRIPT" "$0"
+        echo "✅ Shaasleep Protect script updated successfully!"
+        exec bash "$0" "$ACTION"
+    else
+        rm -f "$TMP_SCRIPT"
+        echo "✅ Script already up to date."
+    fi
+}
+
+function install_protect() {
+    echo "🔧 Installing Shaasleep Protect 🔐..."
+    mkdir -p "$HELPER_DIR" "$MIDDLEWARE_DIR"
+
+    if [[ ! -f "$BACKUP_KERNEL" ]]; then
+        cp "$KERNEL_FILE" "$BACKUP_KERNEL"
+        echo "📦 Kernel backed up."
+    fi
+
+    cat > "$HELPER_FILE" <<'PHP'
 <?php
 namespace App\Helpers;
 
@@ -22,125 +53,120 @@ use Illuminate\Support\Facades\Log;
 
 class ShaasleepProtect
 {
-    public static function guard(?int $ownerId = null, string $context = 'generic'): void
+    public static function guard($ownerId = null, string $context = 'generic'): void
     {
-        $user = Auth::user();
-        if (!$user) self::deny("Akses ditolak, hubungi @Shaasleep");
+        try { $user = Auth::user(); } catch (\Throwable $e) { $user = null; }
+        $mainAdmins = array_map('intval', explode(',', env('MAIN_ADMIN_IDS', '1')));
 
-        $uid = (int)$user->id;
-        $mainAdmins = array_map('intval', explode(',', env('MAIN_ADMIN_IDS','1')));
+        if ($user && in_array((int)$user->id, $mainAdmins)) return;
+        if ($ownerId && $user && (int)$user->id === (int)$ownerId) return;
 
-        if ($uid === 1) return;
-        if (in_array($uid, $mainAdmins)) {
-            self::restrictMainAdmin($context);
-            return;
-        }
-        if ($ownerId && $uid === (int)$ownerId) return;
+        $uid = $user->id ?? '-';
+        $ip = request()->ip() ?? '-';
+        $uri = request()->getRequestUri() ?? '-';
+        Log::warning("ShaasleepProtect🔐 BLOCKED | UID={$uid} | IP={$ip} | URI={$uri} | Context={$context}");
 
-        self::deny("Bro, ini bukan server lu, jangan ngotak-atik punya orang 😤");
-    }
-
-    private static function restrictMainAdmin(string $context): void
-    {
-        $restricted = [
-            'admin/nodes/delete',
-            'admin/servers/delete',
-            'admin/users/edit',
-        ];
-
-        foreach ($restricted as $path){
-            if(str_starts_with($context, $path)){
-                self::deny("Tenang bro, area ini cuma buat si pemilik. Jangan maksa 😅");
-            }
-        }
-    }
-
-    public static function restrictServerAccess($server): void
-    {
-        $user = Auth::user();
-        if(!$user || !$server) self::deny("Mau ngapain sih?");
-        $uid = (int)$user->id;
-        $ownerId = (int)$server->owner_id;
-        $mainAdmins = array_map('intval', explode(',', env('MAIN_ADMIN_IDS','1')));
-
-        if($uid === 1 || in_array($uid, $mainAdmins) || $uid === $ownerId) return;
-
-        self::deny("Bro, ini bukan server lu, jangan ngotak-atik punya orang 😤");
+        self::deny("Akses kamu dibatasi oleh sistem proteksi Shaasleep.");
     }
 
     private static function deny(string $message): void
     {
-        $ip = request()->ip() ?? '-';
-        $uri = request()->getRequestUri() ?? '-';
-        $user = Auth::user();
-        $uid = $user->id ?? '-';
-
-        Log::warning("ShaasleepProtect🚨 BLOCKED | UID={$uid} | IP={$ip} | URI={$uri}");
-
-        http_response_code(403);
-
-        echo <<<HTML
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Danger 🚫</title>
+        $html = <<<HTML
+<!DOCTYPE html><html lang="id"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Shaasleep Protect 🔐</title>
 <style>
-body {margin:0;background:#0d0d0d;color:#f5f5f5;font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(145deg,#000,#1a1a1a);}
-.card {background:rgba(255,255,255,0.05);padding:40px;border-radius:20px;text-align:center;box-shadow:0 0 25px #ff0000;max-width:550px;width:90%;border:1px solid rgba(255,0,0,0.3);}
-h1 {color:#ff3b3b;font-size:34px;margin-bottom:12px;}
-p {color:#e2e8f0;font-size:16px;margin-bottom:28px;}
-a.btn {background:#ff3b3b;color:#fff;padding:12px 20px;border-radius:12px;text-decoration:none;font-weight:700;transition:0.3s;}
-a.btn:hover {background:#ff1a1a;transform:scale(1.05);}
-small {display:block;margin-top:20px;color:#94a3b8;font-size:12px;opacity:0.8;}
-</style>
-</head>
-<body>
+@keyframes pulse{0%{box-shadow:0 0 10px #ff3b3b}50%{box-shadow:0 0 35px #ff0000}100%{box-shadow:0 0 10px #ff3b3b}}
+body{margin:0;background:#0b0f14;color:#fff;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:radial-gradient(circle at center,#111827 0%,#0b0f14 100%)}
+.card{background:rgba(0,0,0,0.35);padding:40px;border-radius:16px;text-align:center;animation:pulse 3s infinite;max-width:500px;width:90%}
+h1{color:#ff4d4d;font-size:28px;margin-bottom:10px}
+p{color:#e2e8f0;margin-bottom:24px}
+a.btn{background:#ff4d4d;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:600;transition:.3s}
+a.btn:hover{background:#ff2222}
+small{display:block;margin-top:18px;color:#94a3b8;font-size:12px}
+</style></head><body>
 <div class="card">
-<h1>🚫 Lu Siapa ngentot?</h1>
+<h1>Access Restricted 🔐</h1>
 <p>{$message}</p>
-<a class="btn" href="/">Balik ke Dashboard</a>
-<small>System by Shaasleep Protect | Akses lu gue blokir.</small>
-</div>
-</body>
-</html>
+<a class="btn" href="/">Kembali ke Dashboard</a>
+<small>Powered Protect by @Shaasleep</small>
+</div></body></html>
 HTML;
+        http_response_code(403);
+        echo $html;
         exit;
     }
 }
-EOF
+PHP
+    echo "✅ Helper created"
 
-echo "[*] Membuat Protect..."
-mkdir -p "$APP_PATH/app/Http/Middleware"
-cat > "$MIDDLEWARE_PATH" << 'EOF'
+    cat > "$MIDDLEWARE_FILE" <<'PHP'
 <?php
 namespace App\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\Request;
 use App\Helpers\ShaasleepProtect;
+use Illuminate\Http\Request;
 
-class ProtectAdmin
+class ShaasleepMiddleware
 {
     public function handle(Request $request, Closure $next)
     {
-        $context = ltrim($request->path(), '/');
-        $server = $request->route('server') ?? null;
-        $ownerId = $server->owner_id ?? null;
+        $user = $request->user();
+        $path = $request->path();
 
-        ShaasleepProtect::guard($ownerId, $context);
+        if (str_starts_with($path, 'admin') || str_starts_with($path, 'servers')) {
+            ShaasleepProtect::guard($user->id ?? null, $path);
+        }
 
         return $next($request);
     }
 }
-EOF
+PHP
+    echo "✅ Middleware created"
 
-echo "[*] Menambah kan protect..."
-grep -q "protect.admin" "$KERNEL_PATH" || \
-sed -i "/protected \$routeMiddleware = \[/a\    'protect.admin' => \App\Http\Middleware\ProtectAdmin::class," "$KERNEL_PATH"
+    if ! grep -q "ShaasleepMiddleware" "$KERNEL_FILE"; then
+        sed -i '/protected \$middleware = \[/a \        \App\\Http\\Middleware\\ShaasleepMiddleware::class,' "$KERNEL_FILE"
+        echo "🔗 Middleware registered to Kernel."
+    fi
 
-echo "[*] autoload..."
-composer dump-autoload
+    cd "$PANEL_ROOT"
+    composer dump-autoload -o >/dev/null 2>&1
+    php artisan optimize:clear >/dev/null 2>&1 || true
+    echo "✅ Shaasleep Protect installed successfully!"
+    echo "🧠 Commands: bash shaasleep_protect.sh [on|off|uninstall|update]"
+}
 
-echo "[✔] Shaasleep Protect berhasil terpasang"
+function enable_protect() {
+    echo "🔐 Enabling Shaasleep Protect..."
+    sed -i '/ShaasleepMiddleware/s|^//||' "$KERNEL_FILE" || true
+    php "$PANEL_ROOT/artisan" optimize:clear >/dev/null 2>&1
+    echo "✅ Shaasleep Protect enabled."
+}
+
+function disable_protect() {
+    echo "⚙️ Disabling Shaasleep Protect temporarily..."
+    sed -i '/ShaasleepMiddleware/s|^|//|' "$KERNEL_FILE" || true
+    php "$PANEL_ROOT/artisan" optimize:clear >/dev/null 2>&1
+    echo "✅ Shaasleep Protect disabled."
+}
+
+function uninstall_protect() {
+    echo "🧹 Uninstalling Shaasleep Protect..."
+    rm -f "$HELPER_FILE" "$MIDDLEWARE_FILE"
+    if [[ -f "$BACKUP_KERNEL" ]]; then
+        cp "$BACKUP_KERNEL" "$KERNEL_FILE"
+        echo "✅ Kernel restored from backup."
+    fi
+    php "$PANEL_ROOT/artisan" optimize:clear >/dev/null 2>&1
+    echo "✅ Shaasleep Protect fully removed."
+}
+
+case "$ACTION" in
+    install) install_protect ;;
+    on) enable_protect ;;
+    off) disable_protect ;;
+    uninstall) uninstall_protect ;;
+    update) update_self ;;
+    *) echo "Usage: bash shaasleep_protect.sh [install|on|off|uninstall|update]" ;;
+esac
